@@ -1,0 +1,112 @@
+<svg
+  xmlns="http://www.w3.org/2000/svg"
+  width="960"
+  height="260"
+  viewBox="0 0 960 260"
+>
+  <defs>
+    <linearGradient id="flow" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#58a6ff"/>
+      <stop offset="50%" stop-color="#2f81f7"/>
+      <stop offset="100%" stop-color="#a371f7"/>
+    </linearGradient>
+
+    <filter id="glow">
+      <feGaussianBlur stdDeviation="4" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <rect
+    width="960"
+    height="260"
+    rx="16"
+    fill="#0d1117"
+    stroke="#30363d"
+  />
+
+  <text
+    x="36"
+    y="45"
+    fill="#f0f6fc"
+    font-size="20"
+    font-family="Arial, sans-serif"
+    font-weight="700"
+  >
+    AI Contribution Flow
+  </text>
+
+  <text
+    x="36"
+    y="70"
+    fill="#8b949e"
+    font-size="13"
+    font-family="Arial, sans-serif"
+  >
+    learning → building → shipping
+  </text>
+
+  <path
+    d="M50 165
+       C120 120, 170 205, 240 150
+       S360 105, 420 160
+       S540 205, 610 140
+       S730 105, 790 155
+       S880 180, 920 120"
+    fill="none"
+    stroke="url(#flow)"
+    stroke-width="3"
+    filter="url(#glow)"
+  />
+
+  <g fill="#58a6ff" filter="url(#glow)">
+    <circle cx="50" cy="165" r="5"/>
+    <circle cx="145" cy="154" r="6"/>
+    <circle cx="240" cy="150" r="5"/>
+    <circle cx="335" cy="134" r="7"/>
+    <circle cx="420" cy="160" r="5"/>
+    <circle cx="515" cy="170" r="6"/>
+    <circle cx="610" cy="140" r="8"/>
+    <circle cx="700" cy="125" r="5"/>
+    <circle cx="790" cy="155" r="7"/>
+    <circle cx="860" cy="157" r="5"/>
+    <circle cx="920" cy="120" r="8"/>
+  </g>
+
+  <g fill="#30363d">
+    <circle cx="90" cy="190" r="3"/>
+    <circle cx="185" cy="125" r="3"/>
+    <circle cx="285" cy="185" r="3"/>
+    <circle cx="380" cy="110" r="3"/>
+    <circle cx="470" cy="195" r="3"/>
+    <circle cx="560" cy="110" r="3"/>
+    <circle cx="655" cy="180" r="3"/>
+    <circle cx="750" cy="105" r="3"/>
+    <circle cx="835" cy="195" r="3"/>
+    <circle cx="900" cy="90" r="3"/>
+  </g>
+
+  <text
+    x="36"
+    y="230"
+    fill="#8b949e"
+    font-size="12"
+    font-family="Arial, sans-serif"
+  >
+    More code. Stronger connections.
+  </text>
+
+  <text
+    x="924"
+    y="230"
+    text-anchor="end"
+    fill="#58a6ff"
+    font-size="12"
+    font-family="Arial, sans-serif"
+  >
+    Alejandro Muguerza
+  </text>
+</svg>
