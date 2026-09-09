@@ -1,0 +1,325 @@
+name: Generate AI Contribution Flow
+
+on:
+  workflow_dispatch:
+
+  schedule:
+    - cron: "17 5 * * *"
+
+permissions:
+  contents: write
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Generate contribution flow
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          USERNAME: ${{ github.repository_owner }}
+        run: |
+          python <<'PY'
+          import json
+          import math
+          import os
+          import urllib.request
+          from pathlib import Path
+
+          token = os.environ["GH_TOKEN"]
+          username = os.environ["USERNAME"]
+
+          query = """
+          query($login: String!) {
+            user(login: $login) {
+              contributionsCollection {
+                contributionCalendar {
+                  totalContributions
+                  weeks {
+                    contributionDays {
+                      contributionCount
+                      date
+                      weekday
+                      color
+                    }
+                  }
+                }
+              }
+            }
+          }
+          """
+
+          payload = json.dumps({
+              "query": query,
+              "variables": {"login": username}
+          }).encode()
+
+          request = urllib.request.Request(
+              "https://api.github.com/graphql",
+              data=payload,
+              headers={
+                  "Authorization": f"Bearer {token}",
+                  "Content-Type": "application/json",
+                  "User-Agent": "contribution-flow-generator"
+              }
+          )
+
+          with urllib.request.urlopen(request) as response:
+              data = json.loads(response.read())
+
+          calendar = (
+              data["data"]["user"]
+              ["contributionsCollection"]
+              ["contributionCalendar"]
+          )
+
+          total = calendar["totalContributions"]
+
+          days = []
+          for week_index, week in enumerate(calendar["weeks"]):
+              for day in week["contributionDays"]:
+                  days.append({
+                      "week": week_index,
+                      "weekday": day["weekday"],
+                      "count": day["contributionCount"],
+                      "date": day["date"]
+                  })
+
+          width = 960
+          height = 300
+
+          left = 42
+          right = 42
+          graph_top = 105
+          graph_height = 125
+
+          max_week = max(d["week"] for d in days) or 1
+          max_count = max((d["count"] for d in days), default=1) or 1
+
+          graph_width = width - left - right
+
+          def x_position(week):
+              return left + (week / max_week) * graph_width
+
+          def activity_y(day):
+              normalized = day["count"] / max_count
+              baseline = graph_top + graph_height / 2
+
+              wave = math.sin(day["week"] * 0.52) * 24
+              weekday_shift = (day["weekday"] - 3) * 2.2
+              activity_shift = normalized * 36
+
+              return baseline + wave + weekday_shift - activity_shift
+
+          active = [d for d in days if d["count"] > 0]
+
+          if len(active) < 2:
+              active = days[::max(1, len(days) // 12)]
+
+          points = [
+              (
+                  x_position(d["week"]),
+                  activity_y(d),
+                  d["count"]
+              )
+              for d in active
+          ]
+
+          # Reduce visual density if there are many active days.
+          if len(points) > 90:
+              step = math.ceil(len(points) / 90)
+              points = points[::step]
+
+          path_points = []
+
+          for x, y, _ in points:
+              path_points.append(f"{x:.1f},{y:.1f}")
+
+          polyline = " ".join(path_points)
+
+          circles = []
+
+          for index, (x, y, count) in enumerate(points):
+              intensity = min(count / max_count, 1)
+              radius = 3.5 + intensity * 5.5
+
+              if intensity > 0.65:
+                  color = "#a371f7"
+              elif intensity > 0.25:
+                  color = "#2f81f7"
+              else:
+                  color = "#58a6ff"
+
+              delay = (index % 15) * 0.13
+
+              circles.append(f"""
+                <circle
+                  cx="{x:.1f}"
+                  cy="{y:.1f}"
+                  r="{radius:.1f}"
+                  fill="{color}"
+                  filter="url(#glow)"
+                >
+                  <animate
+                    attributeName="opacity"
+                    values="0.45;1;0.45"
+                    dur="2.8s"
+                    begin="{delay:.2f}s"
+                    repeatCount="indefinite"
+                  />
+                </circle>
+              """)
+
+          svg = f"""<svg
+            xmlns="http://www.w3.org/2000/svg"
+            width="{width}"
+            height="{height}"
+            viewBox="0 0 {width} {height}"
+          >
+
+            <defs>
+              <linearGradient
+                id="flow"
+                x1="0%"
+                y1="0%"
+                x2="100%"
+                y2="0%"
+              >
+                <stop offset="0%" stop-color="#58a6ff"/>
+                <stop offset="50%" stop-color="#2f81f7"/>
+                <stop offset="100%" stop-color="#a371f7"/>
+              </linearGradient>
+
+              <filter id="glow">
+                <feGaussianBlur
+                  stdDeviation="4"
+                  result="blur"
+                />
+                <feMerge>
+                  <feMergeNode in="blur"/>
+                  <feMergeNode in="SourceGraphic"/>
+                </feMerge>
+              </filter>
+            </defs>
+
+            <rect
+              width="{width}"
+              height="{height}"
+              rx="16"
+              fill="#0d1117"
+              stroke="#30363d"
+            />
+
+            <text
+              x="36"
+              y="43"
+              fill="#f0f6fc"
+              font-size="21"
+              font-family="Arial, sans-serif"
+              font-weight="700"
+            >
+              AI Contribution Flow
+            </text>
+
+            <text
+              x="36"
+              y="69"
+              fill="#8b949e"
+              font-size="13"
+              font-family="Arial, sans-serif"
+            >
+              learning → building → shipping
+            </text>
+
+            <text
+              x="{width - 36}"
+              y="43"
+              text-anchor="end"
+              fill="#58a6ff"
+              font-size="14"
+              font-family="Arial, sans-serif"
+              font-weight="600"
+            >
+              {total} contributions
+            </text>
+
+            <polyline
+              points="{polyline}"
+              fill="none"
+              stroke="url(#flow)"
+              stroke-width="2.7"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              opacity="0.8"
+              filter="url(#glow)"
+            />
+
+            {''.join(circles)}
+
+            <circle
+              r="6"
+              fill="#ffffff"
+              filter="url(#glow)"
+            >
+              <animateMotion
+                dur="11s"
+                repeatCount="indefinite"
+                path="M {' L '.join(path_points)}"
+              />
+            </circle>
+
+            <text
+              x="36"
+              y="{height - 30}"
+              fill="#8b949e"
+              font-size="12"
+              font-family="Arial, sans-serif"
+            >
+              More code. Stronger connections.
+            </text>
+
+            <text
+              x="{width - 36}"
+              y="{height - 30}"
+              text-anchor="end"
+              fill="#58a6ff"
+              font-size="12"
+              font-family="Arial, sans-serif"
+            >
+              @{username}
+            </text>
+
+          </svg>
+          """
+
+          output = Path("assets/contribution-flow.svg")
+          output.parent.mkdir(parents=True, exist_ok=True)
+          output.write_text(svg, encoding="utf-8")
+
+          print(
+              f"Generated contribution flow with "
+              f"{total} contributions."
+          )
+          PY
+
+      - name: Commit generated SVG
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add assets/contribution-flow.svg
+
+          if git diff --cached --quiet; then
+            echo "No changes to commit."
+          else
+            git commit -m "chore: update AI contribution flow"
+            git push
+          fi
