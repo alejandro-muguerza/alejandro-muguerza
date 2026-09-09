@@ -1,95 +1,12 @@
-# Hi, I'm Alejandro Muguerza 👋
-
-### AI Engineering student building practical solutions with Python, Machine Learning and Automation.
-
-I’m focused on turning ideas into useful tools, learning by building, and applying artificial intelligence to real-world problems.
-
-Currently, I’m developing projects through **Bytecode**, an initiative focused on creating technological tools, documenting learning, and transforming ideas into functional solutions.
-
----
-
-## About Me
-
-- 🎓 AI Engineering student
-- 🐍 Working with Python, automation, and data-driven solutions
-- 🤖 Interested in Machine Learning, LLMs, and intelligent systems
-- 🚀 Building practical projects through **Bytecode**
-- 📍 Trujillo, Peru
-
----
-
-## Tech Stack
-
-### Languages
-![Python](https://img.shields.io/badge/Python-3776AB?style=for-the-badge&logo=python&logoColor=white)
-![SQL](https://img.shields.io/badge/SQL-336791?style=for-the-badge&logo=postgresql&logoColor=white)
-
-### Data & Machine Learning
-![Pandas](https://img.shields.io/badge/Pandas-150458?style=for-the-badge&logo=pandas&logoColor=white)
-![NumPy](https://img.shields.io/badge/NumPy-013243?style=for-the-badge&logo=numpy&logoColor=white)
-![Scikit-learn](https://img.shields.io/badge/Scikit--learn-F7931E?style=for-the-badge&logo=scikitlearn&logoColor=white)
-![Jupyter](https://img.shields.io/badge/Jupyter-F37626?style=for-the-badge&logo=jupyter&logoColor=white)
-
-### Tools
-![Git](https://img.shields.io/badge/Git-F05032?style=for-the-badge&logo=git&logoColor=white)
-![GitHub](https://img.shields.io/badge/GitHub-181717?style=for-the-badge&logo=github&logoColor=white)
-![VS Code](https://img.shields.io/badge/VS%20Code-007ACC?style=for-the-badge&logo=visualstudiocode&logoColor=white)
-
----
-
-## Featured Projects
-
-### Bytecode
-Practical AI, automation, and software projects focused on solving real-world problems.
-
-**Focus:** Python · Automation · AI Applications
-
-### Machine Learning Projects
-Applied experiments covering data preparation, model training, evaluation, and interpretation.
-
-**Focus:** Python · Scikit-learn · Data Analysis
-
-### Automation Tools
-Scripts and utilities designed to automate repetitive tasks and improve productivity.
-
-**Focus:** Python · Automation · Productivity
----
-
-## 🧠 AI Contribution Flow
-
-<p align="center">
-  <img
-    src="./assets/contribution-flow.svg"
-    alt="Alejandro Muguerza — AI Contribution Flow"
-    width="100%"
-  />
+<p>
+<img src="./assets/header-top.png" width="100%" alt="Hi, I’m Alejandro. I build practical AI solutions. AI Engineering student passionate about turning ideas into useful tools with Python, machine learning and automation." /><br />
+<a href="https://github.com/alejandro-muguerza?tab=repositories"><img src="./assets/projects-button-row.png" width="19%" alt="View my projects" /></a><a href="https://www.linkedin.com/in/alejandro-muguerza/"><img src="./assets/linkedin-button-row.png" width="21%" alt="Connect on LinkedIn" /></a><a href="https://www.linkedin.com/in/alejandro-muguerza/"><img src="./assets/contact-button-row.png" width="22%" alt="Let’s build something — contact me on LinkedIn" /></a><img src="./assets/header-tail.png" width="37%" alt="Bytecode illustration" />
 </p>
----
 
-## Currently Learning
+<img src="./assets/overview.png" width="100%" alt="Tech Stack: Python, PyTorch, TensorFlow, Scikit-learn, Pandas, NumPy, Jupyter, Git, Docker, Linux, VS Code, GitHub. Currently Learning: Deep Learning and LLMs, MLOps, AWS, system design, AI SaaS. Goals: graduate as an AI Engineer, build open source projects and useful tools, work at an AI company, keep learning." />
 
-- Machine Learning fundamentals and applied projects
-- Data analysis workflows with Python
-- Large Language Models and AI-powered tools
-- Automation and productivity systems
-- Software development practices with Git and GitHub
+<img src="./assets/contribution-flow.gif" width="100%" alt="AI Contribution Flow — curved electric neural signal with glowing branches. The flowing signal is decorative; rings mark real contribution days, and the total comes from GitHub. Updated daily by GitHub Actions." />
 
----
+<a href="https://github.com/alejandro-muguerza?tab=repositories"><img src="./assets/projects.png" width="100%" alt="Featured Projects — planned: bytecode, pdf-to-knowledge and ml-experiments. View available repositories." /></a>
 
-## Goals
-
-- Build strong public projects on GitHub
-- Develop a solid technical portfolio
-- Create useful tools through Bytecode
-- Contribute to open source
-- Keep learning and improving consistently
-
----
-
-## Connect with Me
-
-[![LinkedIn](https://img.shields.io/badge/LinkedIn-Alejandro%20Muguerza-0A66C2?style=for-the-badge&logo=linkedin&logoColor=white)](https://www.linkedin.com/in/alejandro-muguerza/)
-
----
-
-> Learning, building, and improving — one project at a time.
+<sub>Electric signal is decorative; rings and totals show real GitHub activity. Data updates daily via GitHub Actions. Project cards marked “Planned” are concepts in preparation.</sub>
