@@ -1,5 +1,5 @@
 """Electric neural artwork over a real daily contribution calendar.
-The always-visible neural signal is illustrative; the calendar rings encode real days.
+All nodes and routes are generated from real active days; no decorative activity.
 """
 import math, bisect
 from pathlib import Path
@@ -9,11 +9,10 @@ def render(payload,out,*,demo=False,frames_count=160):
     from contribution_flow import validate,layout,label,rgb,mix,COLORS
     validate(payload);W,H,S=1028,270,2
     nodes,active=layout(payload);out=Path(out);out.parent.mkdir(parents=True,exist_ok=True)
-    # Reference-inspired long arcs; weekly activity gently alters the artwork geometry.
-    anchors=[(86,172),(128,149),(196,155),(248,136),(305,152),(357,177),(410,173),(465,137),(515,137),(565,153),(622,176),(683,163),(739,131),(786,138),(837,176),(881,152),(922,149),(981,117)]
-    for i,(x,y) in enumerate(anchors):
-        nearby=sum(n['count'] for n in active if abs(n['x']-x)<36)
-        anchors[i]=(x,y-min(6,math.log1p(nearby)*1.7))
+    from contribution_flow import network, curve
+    for n in nodes:n['y']+=7
+    edges=network(active)
+    primary=[(a,b) for a,b,branch in edges if not branch]
     def spline(points):
         result=[]
         for i in range(len(points)-1):
@@ -22,7 +21,11 @@ def render(payload,out,*,demo=False,frames_count=160):
                 t=j/32
                 result.append(tuple(.5*((2*p1[k])+(-p0[k]+p2[k])*t+(2*p0[k]-5*p1[k]+4*p2[k]-p3[k])*t*t+(-p0[k]+3*p1[k]-3*p2[k]+p3[k])*t*t*t) for k in range(2)))
         return result+[points[-1]]
-    path=spline(anchors);lengths=[0.]
+    path=[]
+    for ai,bi in primary:
+        segment=curve(active[ai],active[bi])
+        path.extend(segment if not path else segment[1:])
+    lengths=[0.]
     for a,b in zip(path,path[1:]):lengths.append(lengths[-1]+math.dist(a,b))
     def point(u):
         distance=max(0,min(.999999,u))*lengths[-1];j=bisect.bisect_right(lengths,distance)-1
@@ -56,7 +59,6 @@ def render(payload,out,*,demo=False,frames_count=160):
             if n['x']-lastx>=35 and n['x']<996:label(d,n['x'],77,calendar.month_abbr[dt.month],10,'#b8c8db');lastx=n['x']
             last=dt.month
     # Grid positions offset by 7px to give the title room.
-    for n in nodes:n['y']+=7
     # Fine horizontal/vertical synapses beneath the circular day cells.
     for row in range(7):d.line((66*S,(104+row*17.6)*S,981*S,(104+row*17.6)*S),fill='#152c3e',width=S)
     for col in range(53):d.line(((66+col*17.6)*S,104*S,(66+col*17.6)*S,210*S),fill='#112b3b',width=S)
@@ -65,10 +67,8 @@ def render(payload,out,*,demo=False,frames_count=160):
         x,y=n['x'],n['y'];r=4.6
         d.ellipse(((x-r)*S,(y-r)*S,(x+r)*S,(y+r)*S),fill='#152636',outline='#2c4459',width=S)
         if n['count']:d.ellipse(((x-r)*S,(y-r)*S,(x+r)*S,(y+r)*S),fill=COLORS[n['level']],outline='#c3f2ff',width=S)
-    # Branches bend out from the backbone; these are illustrative electrical signal paths.
-    branches=[]
-    for idx,dy in [(1,-33),(3,35),(5,-34),(7,31),(9,-38),(10,29),(12,-22),(13,36),(14,21),(15,-29)]:
-        x,y=anchors[idx];branches.append(spline([(x-18,y+3),(x-5,y),(x+11,y+dy*.6),(x+18,y+dy)]))
+    # Every connection joins two genuine active calendar dates.
+    branches=[curve(active[a],active[b]) for a,b,branch in edges if branch]
     routes=[path]+branches
     lineglow=Image.new('RGBA',base.size);lg=ImageDraw.Draw(lineglow);lines=Image.new('RGBA',base.size);ld=ImageDraw.Draw(lines)
     for ri,route in enumerate(routes):
@@ -79,10 +79,9 @@ def render(payload,out,*,demo=False,frames_count=160):
             if ri==0 and j%21<9:ld.line((a[0]*S,(a[1]+4)*S,b[0]*S,(b[1]+4)*S),fill=(*co,95),width=S)
     base=Image.alpha_composite(base,lineglow.filter(ImageFilter.GaussianBlur(4*S)));base=Image.alpha_composite(base,lines)
     d=ImageDraw.Draw(base)
-    d.ellipse((20*S,239*S,29*S,248*S),fill='#248cfc');label(d,36,237,'neural signal',11,'#a9bfd5')
+    d.ellipse((20*S,239*S,29*S,248*S),fill='#248cfc');label(d,36,237,'activity signal',11,'#a9bfd5')
     d.ellipse((158*S,238*S,170*S,250*S),outline='#5eeaf9',width=2*S);label(d,179,237,'real activity',11,'#a9bfd5')
     label(d,1004,237,'More code. Brighter connections.  ϟ',12,'#afc5da',False,'ra')
-    static_emitters=[point(i/27) for i in range(28)]+[b[-1] for b in branches]
     frames=[]
     for f in range(frames_count):
         t=f/frames_count;halo=Image.new('RGBA',base.size);hg=ImageDraw.Draw(halo);near=Image.new('RGBA',base.size);ng=ImageDraw.Draw(near);core=Image.new('RGBA',base.size);cg=ImageDraw.Draw(core)
@@ -93,14 +92,8 @@ def render(payload,out,*,demo=False,frames_count=160):
             if ring:cg.ellipse(box,outline=(124,249,255,255),width=2*S)
             else:
                 cg.ellipse(box,fill=(*co,255));r*=.52;cg.ellipse(((x-r)*S,(y-r)*S,(x+r)*S,(y+r)*S),fill=(209,254,255,255))
-        for i,(x,y) in enumerate(static_emitters):
-            pulse=(.5+.5*math.sin(2*math.pi*(t-i*.081)))**2
-            emitter(x,y,color(x),2.3+1.7*pulse,.5+.5*pulse)
-        for j,index in enumerate([3,7,12,17]):
-            x,y=anchors[index];pulse=.5+.5*math.sin(2*math.pi*(t-j*.21))
-            emitter(x,y,color(x),4.3+1.2*pulse+(1 if index==17 else 0),.9+.1*pulse)
-        # Three slowly travelling packets, with bright heads and tapered electrical trails.
-        for offset in [0,.37,.71]:
+        # A travelling signal exists only when at least two real days are connected.
+        for offset in ([0] if len(path)>1 else []):
             u=(t+offset)%1;fade=min(1,u/.025,(1-u)/.025)
             for tail in range(14,0,-1):
                 q=u-tail*.0018
@@ -110,7 +103,7 @@ def render(payload,out,*,demo=False,frames_count=160):
         for i,branch in enumerate(branches):
             u=(t*2-i*.13)%1;idx=int(u*(len(branch)-1));x,y=branch[idx]
             emitter(x,y,color(x),1.8,.35)
-        # Only these rings encode real contribution days, independently of decorative signal dots.
+        # Every luminous calendar node represents a genuine contribution day.
         for n in active:
             pulse=.55+.45*math.sin(2*math.pi*t);r=4.8+min(2.5,math.log1p(n['count']))
             emitter(n['x'],n['y'],rgb(COLORS[n['level']]),r,.75+.25*pulse,True)
@@ -122,4 +115,4 @@ def render(payload,out,*,demo=False,frames_count=160):
     quant=[im.quantize(palette=palette,dither=Image.Dither.NONE) for im in frames]
     tmp=out.with_suffix('.tmp.gif');quant[0].save(tmp,save_all=True,append_images=quant[1:],duration=70,loop=0,optimize=True,disposal=1);tmp.replace(out)
     frames[0].save(out.with_suffix('.png'))
-    return {'total':payload['total'],'active_days':len(active),'decorative_signal':True,'duration_ms':frames_count*70}
+    return {'total':payload['total'],'active_days':len(active),'decorative_signal':False,'connections':len(edges),'duration_ms':frames_count*70}
