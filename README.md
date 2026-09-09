@@ -53,7 +53,21 @@ Applied experiments covering data preparation, model training, evaluation, and i
 Scripts and utilities designed to automate repetitive tasks and improve productivity.
 
 **Focus:** Python · Automation · Productivity
+---
 
+## 🧠 AI Contribution Flow
+
+<p align="center">
+  <img
+    src="./assets/contribution-flow.svg"
+    alt="Alejandro Muguerza — AI Contribution Flow"
+    width="100%"
+  />
+</p>
+
+<p align="center">
+  <i>learning → building → shipping</i>
+</p>
 ---
 
 ## Currently Learning
