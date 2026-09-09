@@ -23,7 +23,7 @@ concurrency:
 jobs:
   update:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
       - name: Check out profile repository
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
@@ -67,14 +67,37 @@ jobs:
         run: python scripts/contribution_flow.py --username "$PROFILE_USER"
       - name: Assemble seamless animated profile
         run: python scripts/compose_profile.py
-      - name: Save updated card only when changed
+      - name: Save updated card without overwriting newer changes
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PROFILE_USER: ${{ github.repository_owner }}
         run: |
+          set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add assets/contribution-flow.gif assets/contribution-flow.png assets/profile.gif assets/profile.png data/contributions.json
-          if git diff --cached --quiet; then
-            echo "Contribution card is unchanged."
-            exit 0
-          fi
-          git commit -m "Update neural contribution calendar"
-          git push
+
+          for attempt in 1 2 3; do
+            git fetch origin main
+            if [ "$(git rev-parse HEAD)" != "$(git rev-parse origin/main)" ]; then
+              # This is the disposable Actions checkout, never a personal working copy.
+              # Rebuild from the latest branch instead of merging stale binary images.
+              git reset --hard origin/main
+              python -m pip install -r scripts/requirements.txt
+              python scripts/contribution_flow.py --username "$PROFILE_USER"
+              python scripts/compose_profile.py
+            fi
+
+            git add assets/contribution-flow.gif assets/contribution-flow.png assets/profile.gif assets/profile.png data/contributions.json
+            if git diff --cached --quiet; then
+              echo "Contribution card is unchanged."
+              exit 0
+            fi
+            git commit -m "Update neural contribution calendar"
+            if git push origin HEAD:main; then
+              exit 0
+            fi
+            echo "Push did not complete; checking the latest branch before retry $attempt."
+          done
+          echo "Could not publish after three attempts. Check branch rules or ongoing changes."
+          exit 1
+
