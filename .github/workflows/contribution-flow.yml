@@ -8,13 +8,20 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: ai-contribution-flow
+  cancel-in-progress: true
+
 jobs:
   generate:
     runs-on: ubuntu-latest
+    timeout-minutes: 5
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -28,8 +35,8 @@ jobs:
         run: |
           python <<'PY'
           import json
-          import math
           import os
+          import urllib.error
           import urllib.request
           from datetime import datetime
           from pathlib import Path
@@ -55,7 +62,6 @@ jobs:
                       contributionCount
                       date
                       weekday
-                      color
                     }
                   }
                 }
@@ -64,10 +70,12 @@ jobs:
           }
           """
 
-          payload = json.dumps({
-              "query": query,
-              "variables": {"login": username}
-          }).encode()
+          payload = json.dumps(
+              {
+                  "query": query,
+                  "variables": {"login": username},
+              }
+          ).encode("utf-8")
 
           request = urllib.request.Request(
               "https://api.github.com/graphql",
@@ -75,239 +83,492 @@ jobs:
               headers={
                   "Authorization": f"Bearer {token}",
                   "Content-Type": "application/json",
-                  "User-Agent": "ai-contribution-flow"
-              }
+                  "User-Agent": "alejandro-muguerza-ai-contribution-flow",
+              },
+              method="POST",
           )
 
-          with urllib.request.urlopen(request) as response:
-              data = json.loads(response.read())
+          try:
+              with urllib.request.urlopen(request, timeout=30) as response:
+                  result = json.loads(response.read().decode("utf-8"))
+          except urllib.error.HTTPError as error:
+              body = error.read().decode("utf-8", errors="replace")
+              raise RuntimeError(
+                  f"GitHub GraphQL HTTP {error.code}: {body}"
+              ) from error
 
-          calendar = data["data"]["user"]["contributionsCollection"]["contributionCalendar"]
+          if "errors" in result:
+              raise RuntimeError(
+                  "GitHub GraphQL error: "
+                  + json.dumps(result["errors"], indent=2)
+              )
+
+          user = result.get("data", {}).get("user")
+
+          if not user:
+              raise RuntimeError(
+                  f"GitHub user '{username}' was not found."
+              )
+
+          calendar = (
+              user["contributionsCollection"]["contributionCalendar"]
+          )
+
           total = calendar["totalContributions"]
           weeks = calendar["weeks"]
           months = calendar["months"]
 
+          if not weeks:
+              raise RuntimeError(
+                  "GitHub returned an empty contribution calendar."
+              )
+
+          # ---------------------------------------------------------
           # Layout
+          # ---------------------------------------------------------
+
           width = 960
           height = 320
+
           padding_x = 34
           padding_top = 38
+
           grid_top = 96
-          cell = 14
+
+          cell = 12
           gap = 4
+
           rows = 7
           cols = len(weeks)
 
-          grid_width = cols * (cell + gap) - gap
+          available_width = width - 100
+          natural_width = cols * (cell + gap) - gap
+
+          # Keep the graph inside the SVG even if GitHub returns
+          # an unusual number of weeks.
+          if natural_width > available_width:
+              spacing = available_width / max(cols - 1, 1)
+              cell = min(cell, max(7, spacing - gap))
+
+          column_step = cell + gap
+
+          grid_width = (
+              (cols - 1) * column_step + cell
+              if cols > 0
+              else cell
+          )
+
           grid_height = rows * (cell + gap) - gap
           grid_left = (width - grid_width) / 2
 
-          def x_of_col(c):
-              return grid_left + c * (cell + gap)
+          def x_of_col(column):
+              return grid_left + column * column_step
 
-          def y_of_row(r):
-              return grid_top + r * (cell + gap)
+          def y_of_row(row):
+              return grid_top + row * (cell + gap)
 
-          # Flatten days
-          day_points = []
+          # ---------------------------------------------------------
+          # Contribution data
+          # ---------------------------------------------------------
+
+          days = []
           max_count = 0
 
-          for c, week in enumerate(weeks):
+          for column, week in enumerate(weeks):
               for day in week["contributionDays"]:
-                  count = day["contributionCount"]
+                  count = int(day["contributionCount"])
+
                   max_count = max(max_count, count)
-                  day_points.append({
-                      "col": c,
-                      "row": day["weekday"],
-                      "count": count,
-                      "date": day["date"]
-                  })
+
+                  days.append(
+                      {
+                          "col": column,
+                          "row": int(day["weekday"]),
+                          "count": count,
+                          "date": day["date"],
+                      }
+                  )
 
           max_count = max(max_count, 1)
 
+          def ratio_for(count):
+              return min(count / max_count, 1.0)
+
           def intensity_color(count):
-              if count == 0:
+              if count <= 0:
                   return "#161b22"
-              ratio = count / max_count
+
+              ratio = ratio_for(count)
+
               if ratio < 0.20:
                   return "#58a6ff"
-              elif ratio < 0.45:
+
+              if ratio < 0.45:
                   return "#2f81f7"
-              elif ratio < 0.75:
+
+              if ratio < 0.75:
                   return "#7c72ff"
-              else:
-                  return "#a371f7"
+
+              return "#a371f7"
 
           def radius_for(count):
-              if count == 0:
-                  return 2.2
-              ratio = count / max_count
-              return 3.5 + ratio * 4.2
+              if count <= 0:
+                  return 0
 
-          # Active points for path
-          active = [d for d in day_points if d["count"] > 0]
+              return 2.8 + ratio_for(count) * 3.6
 
-          if len(active) < 2:
-              active = [d for i, d in enumerate(day_points) if i % max(1, len(day_points)//14) == 0]
+          # ---------------------------------------------------------
+          # Active path
+          # ---------------------------------------------------------
 
-          # Sort by actual position
-          active = sorted(active, key=lambda d: (d["col"], d["row"]))
+          active = [
+              day
+              for day in days
+              if day["count"] > 0
+          ]
 
-          # Path coordinates centered inside cells
-          coords = []
-          for d in active:
-              x = x_of_col(d["col"]) + cell / 2
-              y = y_of_row(d["row"]) + cell / 2
-              coords.append((x, y, d["count"]))
+          active.sort(
+              key=lambda day: (
+                  day["col"],
+                  day["row"],
+              )
+          )
 
-          # Build smooth path
-          def build_smooth_path(points):
-              if not points:
+          points = []
+
+          for day in active:
+              x = x_of_col(day["col"]) + cell / 2
+              y = y_of_row(day["row"]) + cell / 2
+
+              points.append(
+                  (
+                      x,
+                      y,
+                      day["count"],
+                  )
+              )
+
+          def build_smooth_path(path_points):
+              if not path_points:
                   return ""
-              if len(points) == 1:
-                  x, y, _ = points[0]
+
+              if len(path_points) == 1:
+                  x, y, _ = path_points[0]
                   return f"M {x:.1f} {y:.1f}"
 
-              path = []
-              x0, y0, _ = points[0]
-              path.append(f"M {x0:.1f} {y0:.1f}")
+              commands = []
 
-              for i in range(1, len(points)):
-                  x1, y1, _ = points[i - 1]
-                  x2, y2, _ = points[i]
-                  cx1 = x1 + (x2 - x1) * 0.35
-                  cy1 = y1
-                  cx2 = x1 + (x2 - x1) * 0.65
-                  cy2 = y2
-                  path.append(
-                      f"C {cx1:.1f} {cy1:.1f}, {cx2:.1f} {cy2:.1f}, {x2:.1f} {y2:.1f}"
+              start_x, start_y, _ = path_points[0]
+
+              commands.append(
+                  f"M {start_x:.1f} {start_y:.1f}"
+              )
+
+              for index in range(1, len(path_points)):
+                  x1, y1, _ = path_points[index - 1]
+                  x2, y2, _ = path_points[index]
+
+                  delta_x = x2 - x1
+
+                  control_1_x = x1 + delta_x * 0.35
+                  control_2_x = x1 + delta_x * 0.65
+
+                  commands.append(
+                      "C "
+                      f"{control_1_x:.1f} {y1:.1f}, "
+                      f"{control_2_x:.1f} {y2:.1f}, "
+                      f"{x2:.1f} {y2:.1f}"
                   )
-              return " ".join(path)
 
-          smooth_path = build_smooth_path(coords)
+              return " ".join(commands)
 
+          smooth_path = build_smooth_path(points)
+
+          # ---------------------------------------------------------
           # Month labels
-          month_labels = []
-          for month in months:
-              first_day = month["firstDay"]
-              dt = datetime.fromisoformat(first_day)
-              col_index = None
+          # ---------------------------------------------------------
 
-              for idx, week in enumerate(weeks):
-                  week_dt = datetime.fromisoformat(week["firstDay"])
-                  if week_dt.date() >= dt.date():
-                      col_index = idx
+          month_labels = []
+          used_month_positions = set()
+
+          for month in months:
+              first_day = datetime.fromisoformat(
+                  month["firstDay"]
+              ).date()
+
+              column_index = None
+
+              for index, week in enumerate(weeks):
+                  week_date = datetime.fromisoformat(
+                      week["firstDay"]
+                  ).date()
+
+                  if week_date >= first_day:
+                      column_index = index
                       break
 
-              if col_index is None:
+              if column_index is None:
                   continue
 
-              x = x_of_col(col_index)
-              label = dt.strftime("%b")
+              # Prevent overlapping duplicate month labels.
+              if column_index in used_month_positions:
+                  continue
+
+              used_month_positions.add(column_index)
+
+              x = x_of_col(column_index)
+
+              label = datetime.fromisoformat(
+                  month["firstDay"]
+              ).strftime("%b")
+
               month_labels.append(
                   f'''
-                  <text x="{x:.1f}" y="78"
-                        fill="#8b949e"
-                        font-size="11"
-                        font-family="Arial, sans-serif">
+                  <text
+                    x="{x:.1f}"
+                    y="78"
+                    fill="#8b949e"
+                    font-size="11"
+                    font-family="Arial, sans-serif"
+                  >
                     {label}
                   </text>
                   '''
               )
 
+          # ---------------------------------------------------------
           # Weekday labels
+          # GitHub weekday uses Sunday = 0.
+          # ---------------------------------------------------------
+
           weekday_map = {
-              0: "Mon",
-              2: "Wed",
-              4: "Fri",
-              6: "Sun"
+              1: "Mon",
+              3: "Wed",
+              5: "Fri",
           }
 
           weekday_labels = []
+
           for row, label in weekday_map.items():
               y = y_of_row(row) + cell / 2 + 4
+
               weekday_labels.append(
                   f'''
-                  <text x="{grid_left - 22:.1f}" y="{y:.1f}"
-                        text-anchor="end"
-                        fill="#8b949e"
-                        font-size="11"
-                        font-family="Arial, sans-serif">
+                  <text
+                    x="{grid_left - 14:.1f}"
+                    y="{y:.1f}"
+                    text-anchor="end"
+                    fill="#8b949e"
+                    font-size="10"
+                    font-family="Arial, sans-serif"
+                  >
                     {label}
                   </text>
                   '''
               )
 
-          # Grid cells
-          cells_svg = []
+          # ---------------------------------------------------------
+          # Grid + active nodes
+          # ---------------------------------------------------------
+
+          grid_svg = []
           active_nodes_svg = []
 
-          for i, d in enumerate(day_points):
-              x = x_of_col(d["col"])
-              y = y_of_row(d["row"])
-              count = d["count"]
-              fill = intensity_color(count)
+          for index, day in enumerate(days):
+              x = x_of_col(day["col"])
+              y = y_of_row(day["row"])
 
-              cells_svg.append(
+              count = day["count"]
+
+              if count == 0:
+                  fill = "#21262d"
+                  opacity = "0.55"
+              else:
+                  fill = intensity_color(count)
+                  opacity = "0.25"
+
+              grid_svg.append(
                   f'''
-                  <rect x="{x:.1f}" y="{y:.1f}" width="{cell}" height="{cell}"
-                        rx="4" fill="{fill}" opacity="0.16" />
+                  <rect
+                    x="{x:.1f}"
+                    y="{y:.1f}"
+                    width="{cell:.1f}"
+                    height="{cell:.1f}"
+                    rx="3"
+                    fill="{fill}"
+                    opacity="{opacity}"
+                  />
                   '''
               )
 
-              if count > 0:
-                  cx = x + cell / 2
-                  cy = y + cell / 2
-                  r = radius_for(count)
-                  node_color = intensity_color(count)
-                  delay = (i % 18) * 0.14
+              if count <= 0:
+                  continue
 
-                  active_nodes_svg.append(
-                      f'''
-                      <circle cx="{cx:.1f}" cy="{cy:.1f}" r="{r:.1f}"
-                              fill="{node_color}" filter="url(#glow)">
-                        <animate attributeName="opacity"
-                                 values="0.45;1;0.45"
-                                 dur="3.0s"
-                                 begin="{delay:.2f}s"
-                                 repeatCount="indefinite" />
-                      </circle>
-                      '''
-                  )
+              cx = x + cell / 2
+              cy = y + cell / 2
 
+              radius = radius_for(count)
+              color = intensity_color(count)
+
+              delay = (index % 20) * 0.11
+
+              active_nodes_svg.append(
+                  f'''
+                  <circle
+                    cx="{cx:.1f}"
+                    cy="{cy:.1f}"
+                    r="{radius:.1f}"
+                    fill="{color}"
+                    filter="url(#nodeGlow)"
+                  >
+                    <animate
+                      attributeName="opacity"
+                      values="0.55;1;0.55"
+                      dur="3.2s"
+                      begin="{delay:.2f}s"
+                      repeatCount="indefinite"
+                    />
+                  </circle>
+                  '''
+              )
+
+          # ---------------------------------------------------------
+          # Animated pulse
+          # ---------------------------------------------------------
+
+          moving_pulse = ""
+
+          if len(points) >= 2:
+              moving_pulse = f'''
+              <circle
+                r="3.8"
+                fill="#79c0ff"
+                filter="url(#pulseGlow)"
+              >
+                <animateMotion
+                  dur="11s"
+                  repeatCount="indefinite"
+                  path="{smooth_path}"
+                />
+              </circle>
+              '''
+
+          # ---------------------------------------------------------
           # Legend
-          legend_x = grid_left
-          legend_y = grid_top + grid_height + 32
+          # ---------------------------------------------------------
+
+          legend_y = grid_top + grid_height + 29
 
           legend = f'''
-          <text x="{legend_x:.1f}" y="{legend_y:.1f}"
-                fill="#8b949e" font-size="12"
-                font-family="Arial, sans-serif">
-            Activity intensity
+          <text
+            x="{grid_left:.1f}"
+            y="{legend_y:.1f}"
+            fill="#8b949e"
+            font-size="11"
+            font-family="Arial, sans-serif"
+          >
+            Activity
           </text>
 
-          <circle cx="{legend_x + 118:.1f}" cy="{legend_y - 4:.1f}" r="4" fill="#58a6ff"/>
-          <circle cx="{legend_x + 136:.1f}" cy="{legend_y - 4:.1f}" r="4" fill="#2f81f7"/>
-          <circle cx="{legend_x + 154:.1f}" cy="{legend_y - 4:.1f}" r="4" fill="#7c72ff"/>
-          <circle cx="{legend_x + 172:.1f}" cy="{legend_y - 4:.1f}" r="4" fill="#a371f7"/>
+          <circle
+            cx="{grid_left + 55:.1f}"
+            cy="{legend_y - 4:.1f}"
+            r="3.4"
+            fill="#58a6ff"
+          />
+
+          <circle
+            cx="{grid_left + 70:.1f}"
+            cy="{legend_y - 4:.1f}"
+            r="3.4"
+            fill="#2f81f7"
+          />
+
+          <circle
+            cx="{grid_left + 85:.1f}"
+            cy="{legend_y - 4:.1f}"
+            r="3.4"
+            fill="#7c72ff"
+          />
+
+          <circle
+            cx="{grid_left + 100:.1f}"
+            cy="{legend_y - 4:.1f}"
+            r="3.4"
+            fill="#a371f7"
+          />
           '''
 
-          svg = f'''<svg xmlns="http://www.w3.org/2000/svg"
-               width="{width}" height="{height}" viewBox="0 0 {width} {height}">
+          # ---------------------------------------------------------
+          # SVG
+          # ---------------------------------------------------------
+
+          svg = f'''<svg
+            xmlns="http://www.w3.org/2000/svg"
+            width="{width}"
+            height="{height}"
+            viewBox="0 0 {width} {height}"
+          >
             <defs>
-              <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="0%">
-                <stop offset="0%" stop-color="#0d1117"/>
-                <stop offset="100%" stop-color="#0b1220"/>
+              <linearGradient
+                id="background"
+                x1="0%"
+                y1="0%"
+                x2="100%"
+                y2="100%"
+              >
+                <stop
+                  offset="0%"
+                  stop-color="#0d1117"
+                />
+
+                <stop
+                  offset="100%"
+                  stop-color="#0b1220"
+                />
               </linearGradient>
 
-              <linearGradient id="flow" x1="0%" y1="0%" x2="100%" y2="0%">
-                <stop offset="0%" stop-color="#58a6ff"/>
-                <stop offset="50%" stop-color="#2f81f7"/>
-                <stop offset="100%" stop-color="#a371f7"/>
+              <linearGradient
+                id="flow"
+                x1="0%"
+                y1="0%"
+                x2="100%"
+                y2="0%"
+              >
+                <stop
+                  offset="0%"
+                  stop-color="#58a6ff"
+                />
+
+                <stop
+                  offset="48%"
+                  stop-color="#2f81f7"
+                />
+
+                <stop
+                  offset="100%"
+                  stop-color="#a371f7"
+                />
               </linearGradient>
 
-              <filter id="glow">
-                <feGaussianBlur stdDeviation="4" result="blur"/>
+              <filter id="nodeGlow">
+                <feGaussianBlur
+                  stdDeviation="2.5"
+                  result="blur"
+                />
+
+                <feMerge>
+                  <feMergeNode in="blur"/>
+                  <feMergeNode in="SourceGraphic"/>
+                </feMerge>
+              </filter>
+
+              <filter id="pulseGlow">
+                <feGaussianBlur
+                  stdDeviation="3"
+                  result="blur"
+                />
+
                 <feMerge>
                   <feMergeNode in="blur"/>
                   <feMergeNode in="SourceGraphic"/>
@@ -315,83 +576,148 @@ jobs:
               </filter>
             </defs>
 
-            <rect width="{width}" height="{height}" rx="18" fill="url(#bg)" stroke="#30363d"/>
+            <rect
+              width="{width}"
+              height="{height}"
+              rx="18"
+              fill="url(#background)"
+              stroke="#30363d"
+            />
 
-            <text x="{padding_x}" y="{padding_top}"
-                  fill="#f0f6fc" font-size="21"
-                  font-family="Arial, sans-serif" font-weight="700">
+            <text
+              x="{padding_x}"
+              y="{padding_top}"
+              fill="#f0f6fc"
+              font-size="21"
+              font-family="Arial, sans-serif"
+              font-weight="700"
+            >
               AI Contribution Flow
             </text>
 
-            <text x="{padding_x}" y="{padding_top + 24}"
-                  fill="#8b949e" font-size="13"
-                  font-family="Arial, sans-serif">
+            <text
+              x="{padding_x}"
+              y="{padding_top + 24}"
+              fill="#8b949e"
+              font-size="13"
+              font-family="Arial, sans-serif"
+            >
               learning → building → shipping
             </text>
 
-            <text x="{width - padding_x}" y="{padding_top}"
-                  text-anchor="end"
-                  fill="#58a6ff" font-size="14"
-                  font-family="Arial, sans-serif" font-weight="600">
+            <text
+              x="{width - padding_x}"
+              y="{padding_top}"
+              text-anchor="end"
+              fill="#58a6ff"
+              font-size="14"
+              font-family="Arial, sans-serif"
+              font-weight="600"
+            >
               {total} contributions
             </text>
 
-            {"".join(month_labels)}
-            {"".join(weekday_labels)}
+            {''.join(month_labels)}
 
-            {"".join(cells_svg)}
+            {''.join(weekday_labels)}
 
-            <path d="{smooth_path}"
-                  fill="none"
-                  stroke="url(#flow)"
-                  stroke-width="3"
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                  opacity="0.90"
-                  filter="url(#glow)" />
+            {''.join(grid_svg)}
 
-            {"".join(active_nodes_svg)}
+            {
+              f"""
+              <path
+                d="{smooth_path}"
+                fill="none"
+                stroke="url(#flow)"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                opacity="0.65"
+              />
+              """
+              if len(points) >= 2
+              else ""
+            }
 
-            <circle r="5.5" fill="#ffffff" filter="url(#glow)">
-              <animateMotion dur="9s" repeatCount="indefinite" path="{smooth_path}" />
-            </circle>
+            {''.join(active_nodes_svg)}
+
+            {moving_pulse}
 
             {legend}
 
-            <text x="{padding_x}" y="{height - 20}"
-                  fill="#8b949e" font-size="12"
-                  font-family="Arial, sans-serif">
+            <text
+              x="{padding_x}"
+              y="{height - 20}"
+              fill="#8b949e"
+              font-size="12"
+              font-family="Arial, sans-serif"
+            >
               Turning learning into real systems.
             </text>
 
-            <text x="{width - padding_x}" y="{height - 20}"
-                  text-anchor="end"
-                  fill="#58a6ff" font-size="12"
-                  font-family="Arial, sans-serif">
+            <text
+              x="{width - padding_x}"
+              y="{height - 20}"
+              text-anchor="end"
+              fill="#58a6ff"
+              font-size="12"
+              font-family="Arial, sans-serif"
+            >
               @{username}
             </text>
           </svg>
           '''
 
-          output = Path("assets/contribution-flow.svg")
-          output.parent.mkdir(parents=True, exist_ok=True)
-          output.write_text(svg, encoding="utf-8")
+          output = Path(
+              "assets/contribution-flow.svg"
+          )
 
-          print(f"Generated contribution flow for {username} with {total} contributions.")
+          output.parent.mkdir(
+              parents=True,
+              exist_ok=True,
+          )
+
+          output.write_text(
+              svg,
+              encoding="utf-8",
+          )
+
+          print(
+              f"Generated AI Contribution Flow for "
+              f"{username}: {total} contributions."
+          )
           PY
 
-         - name: Commit generated SVG
+      - name: Commit generated SVG
+        shell: bash
         run: |
+          set -euo pipefail
+
           git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git config user.email \
+            "41898282+github-actions[bot]@users.noreply.github.com"
 
           git add assets/contribution-flow.svg
 
           if git diff --cached --quiet; then
-            echo "No changes to commit."
-          else
-            git commit -m "chore: update AI contribution flow"
+            echo "SVG is already up to date."
+            exit 0
+          fi
 
-            git pull --rebase origin main
-            git push origin main
+          git commit \
+            -m "chore: update AI contribution flow"
+
+          # main may have changed while this workflow was running.
+          # Rebase our generated commit on top of the newest remote state.
+          git fetch origin main
+          git rebase origin/main
+
+          # Retry once in the unlikely event that main changes
+          # again between the rebase and push.
+          if ! git push origin HEAD:main; then
+            echo "Remote changed again. Retrying once..."
+
+            git fetch origin main
+            git rebase origin/main
+            git push origin HEAD:main
           fi
