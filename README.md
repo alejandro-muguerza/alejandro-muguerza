@@ -64,10 +64,6 @@ Scripts and utilities designed to automate repetitive tasks and improve producti
     width="100%"
   />
 </p>
-
-<p align="center">
-  <i>learning → building → shipping</i>
-</p>
 ---
 
 ## Currently Learning
