@@ -380,7 +380,7 @@ jobs:
           print(f"Generated contribution flow for {username} with {total} contributions.")
           PY
 
-      - name: Commit generated SVG
+         - name: Commit generated SVG
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
@@ -391,5 +391,7 @@ jobs:
             echo "No changes to commit."
           else
             git commit -m "chore: update AI contribution flow"
-            git push
+
+            git pull --rebase origin main
+            git push origin main
           fi
