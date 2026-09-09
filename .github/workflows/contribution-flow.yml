@@ -26,17 +26,40 @@ jobs:
     timeout-minutes: 10
     steps:
       - name: Check out profile repository
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
       - name: Set up Python
-        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: '3.12'
       - name: Install rendering dependency
         run: python -m pip install -r scripts/requirements.txt
-      - name: Install font
+      - name: Prepare verified fonts without system package updates
         run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq fonts-dejavu-core
+          python <<'PYFONT'
+          import hashlib
+          import os
+          from pathlib import Path
+          from urllib.request import urlopen
+          from PIL import ImageFont
+          
+          directory = Path(os.environ["RUNNER_TEMP"]) / "profile-fonts"
+          directory.mkdir(parents=True, exist_ok=True)
+          base = "https://raw.githubusercontent.com/matplotlib/matplotlib/v3.10.6/lib/matplotlib/mpl-data/fonts/ttf/"
+          fonts = {
+              "FLOW_FONT": ("DejaVuSans.ttf", "3fdf69cabf06049ea70a00b5919340e2ce1e6d02b0cc3c4b44fb6801bd1e0d22"),
+              "FLOW_FONT_BOLD": ("DejaVuSans-Bold.ttf", "b184b89e3c1075f22f6b71575b6fc20d4972b3cfd3b23322ca6fd596dcaef167"),
+          }
+          for variable, (filename, expected) in fonts.items():
+              with urlopen(base + filename, timeout=30) as response:
+                  content = response.read()
+              if hashlib.sha256(content).hexdigest() != expected:
+                  raise RuntimeError("Font integrity check failed: " + filename)
+              destination = directory / filename
+              destination.write_bytes(content)
+              ImageFont.truetype(str(destination), 16)
+              with open(os.environ["GITHUB_ENV"], "a", encoding="utf-8") as output:
+                  output.write(f"{variable}={destination}\n")
+          PYFONT
       - name: Fetch real contributions and render network
         env:
           GH_TOKEN: ${{ github.token }}
